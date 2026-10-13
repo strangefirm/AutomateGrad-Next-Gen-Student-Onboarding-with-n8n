@@ -1,0 +1,233 @@
+{
+  "name": "googlesheet_email",
+  "nodes": [
+    {
+      "parameters": {
+        "modelId": {
+          "__rl": true,
+          "value": "gpt-4o-mini",
+          "mode": "list",
+          "cachedResultName": "GPT-4O-MINI"
+        },
+        "responses": {
+          "values": [
+            {
+              "role": "assistant",
+              "content": "=Output ONLY valid JSON. No conversational text, no explanations, no markdown blocks. \n\nGenerate a welcome email for the student based on the following details:\n- Name: {{ $json.Name }}\n- Email: {{ $json.Email }}\n- Course: {{ $json.Course }}\n- DOJ: {{ $json.DOJ }}\n- Place: {{ $json.Place }}\n\nRULES:\n1. If the email field above is missing, blank, or empty, you MUST set the \"to\" field value to \"aurelity9@gmail.com\". Otherwise, use the student's actual email address.\n2. Output a clean JSON object with \"to\", \"subject\", and \"body\" fields.\n\nUse this exact JSON structure:\n{\n  \"to\": \"student's email here (or aureliyt9@gmail.com if empty)\",\n  \"subject\": \"Welcome to the {{ $json.Course }} Course!\",\n  \"body\": \"Dear {{ $json.Name }},\\n\\nWelcome aboard! Your enrollment in the {{ $json.Course }} course starting on {{ $json.DOJ }} is confirmed.\\n\\nWe are thrilled to have you in {{ $json.Place }}. If you have any questions, feel free to reach out.\\n\\nBest regards,\\nThe Admissions Team\"\n}"
+            }
+          ]
+        },
+        "simplify": false,
+        "builtInTools": {},
+        "options": {}
+      },
+      "type": "@n8n/n8n-nodes-langchain.openAi",
+      "typeVersion": 2.3,
+      "position": [
+        -512,
+        -448
+      ],
+      "id": "062065b6-f737-4432-9680-cb3817667481",
+      "name": "Message a model",
+      "credentials": {
+        "openAiApi": {
+          "id": "VUXJYTpgMKvmEgfA",
+          "name": "OpenAI account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "61fb4b25-e282-4726-840e-7698550e9e11",
+              "leftValue": "={{ $json.Paid }}",
+              "rightValue": "Yes",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        -736,
+        -336
+      ],
+      "id": "d1de98ad-019a-4be5-93ca-ecade9210aa3",
+      "name": "If"
+    },
+    {
+      "parameters": {
+        "jsCode": "// 1. Loop through ALL items coming into the Code node\nconst items = $input.all();\nlet allRecords = [];\n\n// Define your default admin email here\nconst adminEmail = \"aureliyt9@gmail.com\";\n\nfor (const item of items) {\n  const jsonItem = item.json || item;\n\n  // Extract raw text from the \"Message a model\" node structure\n  let raw =\n    jsonItem.output?.[0]?.content?.[0]?.text ||   \n    jsonItem.text ||                               \n    jsonItem.message?.content ||                   \n    '';\n\n  if (typeof raw !== 'string') {\n    raw = JSON.stringify(raw);\n  }\n\n  // 2. Clean conversational text and markdown code blocks\n  let cleaned = raw.replace(/```json/gi, \"\").replace(/```/g, \"\").trim();\n  const jsonMatch = cleaned.match(/\\{[\\s\\S]*\\}|\\[[\\s\\S]*\\]/);\n  if (jsonMatch) {\n    cleaned = jsonMatch[0];\n  }\n\n  let parsedData;\n  try {\n    parsedData = JSON.parse(cleaned);\n  } catch (e) {\n    // Fallback if JSON parsing fails: route to admin email\n    allRecords.push({\n      to: adminEmail,\n      subject: \"Enrollment Notification / Parse Error\",\n      body: cleaned || \"No text received from the model\"\n    });\n    continue;\n  }\n\n  // 3. Normalize records into an array\n  let records = [];\n  if (Array.isArray(parsedData)) {\n    records = parsedData;\n  } else if (parsedData.emails && Array.isArray(parsedData.emails)) {\n    records = parsedData.emails;\n  } else if (parsedData.students && Array.isArray(parsedData.students)) {\n    records = parsedData.students;\n  } else {\n    records = [parsedData];\n  }\n\n  // 4. Extract fields, check for empty emails, and assign admin fallback\n  for (const entry of records) {\n    const normalized = {};\n    for (let key in entry) {\n      if (entry.hasOwnProperty(key)) {\n        normalized[key.toLowerCase()] = entry[key];\n      }\n    }\n\n    let to = normalized['to'] || normalized['email'] || normalized['mail'] || '';\n    let subject = normalized['subject'] || normalized['title'] || 'Welcome to Your Course!';\n    let body = normalized['body'] || normalized['message'] || '';\n\n    if (!body && typeof entry === 'object') {\n      const parts = [normalized['greeting'], normalized['body'], normalized['encouragement'], normalized['closing'], normalized['signature']].filter(Boolean);\n      if (parts.length > 0) {\n        body = parts.join('\\n\\n');\n      }\n    }\n\n    // --- ADMIN EMAIL FALLBACK RULE ---\n    // If 'to' is missing, blank, or contains a dummy placeholder, redirect to admin email\n    if (!to || String(to).trim() === '' || String(to).includes('student@example.com') || String(to).includes('undefined')) {\n      to = adminEmail;\n    }\n\n    allRecords.push({\n      to: String(to).trim(),\n      subject: String(subject).trim(),\n      body: String(body).trim()\n    });\n  }\n}\n\n// 5. Return all items for batch email processing\nreturn allRecords.map(record => ({ json: record }));"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -160,
+        -336
+      ],
+      "id": "44f97f08-f5be-4947-969f-4d6423b6f103",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "documentId": {
+          "__rl": true,
+          "value": "1DW7Hv52eiybdok_BdNh8e3SlvSxUPaL4D00ygymhuXE",
+          "mode": "list",
+          "cachedResultName": "students",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1DW7Hv52eiybdok_BdNh8e3SlvSxUPaL4D00ygymhuXE/edit?usp=drivesdk"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": 424777963,
+          "mode": "list",
+          "cachedResultName": "Sheet2",
+          "cachedResultUrl": "https://docs.google.com/spreadsheets/d/1DW7Hv52eiybdok_BdNh8e3SlvSxUPaL4D00ygymhuXE/edit#gid=424777963"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.7,
+      "position": [
+        -960,
+        -336
+      ],
+      "id": "ed480813-3ea8-4091-8fc6-fa414c9b5505",
+      "name": "Get row(s) in sheet",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "mZwN5yx6hZZVww17",
+          "name": "Google Sheets account 2"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.to }}",
+        "subject": "={{ $json.subject }}",
+        "message": "={{ $json.body }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        64,
+        -336
+      ],
+      "id": "15b66f12-78fe-4b02-87fe-3f6b371847bc",
+      "name": "Send a message",
+      "webhookId": "d61ebbf9-b5fc-4ef8-887b-cf6f49bdec9e",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "UbRf7yCKaZTZUFPk",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      },
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.4,
+      "position": [
+        -1152,
+        -336
+      ],
+      "id": "ca8722c2-cc81-4c00-b23b-d1e0be07efc6",
+      "name": "Schedule Trigger"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "If": {
+      "main": [
+        [
+          {
+            "node": "Message a model",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Message a model": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Send a message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Get row(s) in sheet": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Schedule Trigger": {
+      "main": [
+        [
+          {
+            "node": "Get row(s) in sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": true
+  },
+  "versionId": "d81f4428-84c2-4bac-b5fc-5b30bf23d1eb",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "abeb4b55c0ccb1418f9b205caa71e47422f7c927109be7631101e568cd0e6d1e"
+  },
+  "nodeGroups": [],
+  "id": "wEwMrhIqb3HC0kzp",
+  "tags": []
+}
